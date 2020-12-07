@@ -42,8 +42,6 @@ import time
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 # os.environ["CUDA_VISIBLE_DEVICES"] = str(sys.argv[1])
 
-
-
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
@@ -55,7 +53,8 @@ env_string = "CartPole-v1"
 # Configuration paramaters for the whole setup
 seed = 42
 gamma = 0.99  # Discount factor for past rewards
-epsilon = 1.0  # Epsilon greedy parameter
+epsilon = tf.Variable(1.0, trainable=False)  # Epsilon greedy parameter
+epsilon.assign(1.0)
 epsilon_min = 0.1  # Minimum epsilon greedy parameter
 epsilon_max = 1.0  # Maximum epsilon greedy parameter
 epsilon_interval = (
@@ -66,10 +65,12 @@ batch_size = 32  # Size of batch taken from replay buffer
 max_steps_per_episode = 10000
 epsilon_greedy_decay_prop = 0.1 # proprtion of total timesteps over which epsilon is decayed
 exploration_proportion = 0.001 # proportion of total timesteps in which agent engages in pure exploration
-total_timesteps = 100000
+total_timesteps = 2000000
 num_actions = 2
-timeout_steps = 200
-train = False
+timeout_steps = 500
+train = True
+neg_fall_reward = 5
+exp_name = "2m_min5"
 
 # Use the Baseline Atari environment because of Deepmind helper functions
 env = gym.make(env_string)
@@ -103,7 +104,7 @@ def ortho_init(scale=1.0):
         return (scale * q[:shape[0], :shape[1]]).astype(np.float32)
     return _ortho_init
 
-def create_q_mlp(input_shape=2, num_layers=2, num_hidden=64, activation=tf.tanh, hidden_units=256, num_actions=3):
+def create_q_mlp(input_shape=2, num_layers=2, num_hidden=64, activation=tf.tanh, hidden_units=256, num_actions=2):
     x_input = tf.keras.Input(shape=input_shape)
     # h = tf.keras.layers.Flatten(x_input)
     h = x_input
@@ -117,12 +118,12 @@ def create_q_mlp(input_shape=2, num_layers=2, num_hidden=64, activation=tf.tanh,
     network = tf.keras.Model(inputs=[x_input], outputs=[q_out])
     return network
 
-def simulate(env_string="CartPole-v1", num_episodes=1000):
+def simulate(env_string="CartPole-v1", num_episodes=1000, exp_name=exp_name):
     model = create_q_mlp(input_shape=4, num_layers=2, num_hidden=64, num_actions=2)
     model_target = create_q_mlp(input_shape=4, num_layers=2, num_hidden=64, num_actions=2)
     env = gym.make(env_string)
 
-    checkpoints_dir = os.path.join(".", "checkpoints", env_string)
+    checkpoints_dir = os.path.join(".", "checkpoints", env_string, exp_name)
     checkpoint = tf.train.Checkpoint(model=model, model_target=model_target)
     manager = tf.train.CheckpointManager(checkpoint, checkpoints_dir, max_to_keep=40)
 
@@ -174,11 +175,12 @@ if train:
     state_next_history = []
     rewards_history = []
     done_history = []
-    alt_done_history = []
+    pole_fall_history = []
     episode_reward_history = []
     running_reward = 0
     episode_count = 0
-    total_timestep_count = 0
+    total_timestep_count = tf.Variable(0, trainable=False)
+    total_timestep_count.assign(0) # sugar for chekcpointing
     # Number of frames to take random action and observe output
     exploration_timesteps = int(exploration_proportion * total_timesteps)
     print("Number of pure exploration timesteps: {}".format(exploration_timesteps))
@@ -196,15 +198,18 @@ if train:
     loss_function = keras.losses.Huber()
 
 
-    checkpoints_dir = os.path.join(".", "checkpoints", env_string)
-    checkpoint = tf.train.Checkpoint(model=model, model_target=model_target)
+    checkpoints_dir = os.path.join(".", "checkpoints", env_string, exp_name)
+    checkpoint = tf.train.Checkpoint(model=model, model_target=model_target,
+                                     epsilon=epsilon, total_timestep_count=total_timestep_count)
     manager = tf.train.CheckpointManager(checkpoint, checkpoints_dir, max_to_keep=40)
     checkpoint_timesteps = 1000
 
     checkpoint.restore(manager.latest_checkpoint)
+    epsilon = epsilon.assign_add(0.).numpy()
+    total_timestep_count = total_timestep_count.assign_add(0).numpy()
 
     start_time = time.time()
-    while total_timestep_count < total_timesteps:  # Run until solved
+    while total_timestep_count < total_timesteps:
         state = np.array(env.reset())
         episode_reward = 0
 
@@ -217,7 +222,6 @@ if train:
             if total_timestep_count % checkpoint_timesteps == 0:
                 # print("Time elapsed: {:.1f}. Total number of frames: {}, epsilon:{:.1f}".format(time.time() - start_time,
                 #                                                                                 total_timestep_count, epsilon))
-
                 manager.save()
 
             # Use epsilon-greedy for exploration
@@ -248,15 +252,13 @@ if train:
             state_history.append(state)
             state_next_history.append(state_next)
             done_history.append(done)
-            # if done and timestep < timeout_steps:
-            #     done_history.append(True)
-            #     # print(done, True)
-            # else:
-            #     done_history.append(False)
-            #     # print(done, False)
-
-
             rewards_history.append(reward)
+            if done and timestep < timeout_steps:
+                pole_fall_history.append(True)
+                # print(done, True)
+            else:
+                pole_fall_history.append(False)
+                # print(done, False)
             state = state_next
 
             # Update every fourth frame and once batch size is over 32
@@ -274,17 +276,20 @@ if train:
                 done_sample = tf.convert_to_tensor(
                     [float(done_history[i]) for i in indices]
                 )
+                pole_fall_sample = tf.convert_to_tensor(
+                    [float(pole_fall_history[i]) for i in indices]
+                )
 
                 # Build the updated Q-values for the sampled future states
                 # Use the target model for stability
                 future_rewards = model_target.predict(state_next_sample)
                 # Q value = reward + discount factor * expected future reward
-                updated_q_values = rewards_sample + gamma * (1 - done_sample) * tf.reduce_max(
+                updated_q_values = rewards_sample + gamma * tf.reduce_max(
                     future_rewards, axis=1
                 )
 
-                # If final frame set the last value to 0
-                #updated_q_values = updated_q_values * (1 - done_sample) - done_sample
+                # If pole fell then set value to -5
+                updated_q_values = updated_q_values * (1 - pole_fall_sample) - neg_fall_reward*pole_fall_sample
 
                 # Create a mask so we only calculate loss on the updated Q-values
                 masks = tf.one_hot(action_sample, num_actions)
@@ -318,7 +323,8 @@ if train:
                 del done_history[:1]
 
             if done:
-                print("Cumulative timestep: {}. Epsilon: {:.4f}. Episode reward: {}".format(total_timestep_count, epsilon, episode_reward))
+                print("Time elapsed: {:.1f}. Cumulative timestep: {}. Epsilon: {:.4f}. Episode reward: {}"
+                      .format(time.time() - start_time, total_timestep_count, epsilon, episode_reward))
                 print("model_layer_weights", model.get_weights()[0][0][0])
                 if len(done_history) > batch_size:
                     print("Average q_value: {:.1f}".format(tf.reduce_mean(q_values).numpy()))
