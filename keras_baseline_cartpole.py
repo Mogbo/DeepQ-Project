@@ -52,10 +52,10 @@ env_string = "CartPole-v1"
 
 # Configuration paramaters for the whole setup
 seed = 42
-gamma = 0.99  # Discount factor for past rewards
+gamma = 1.  # Discount factor for past rewards
 epsilon = tf.Variable(1.0, trainable=False)  # Epsilon greedy parameter
 epsilon.assign(1.0)
-epsilon_min = 0.1  # Minimum epsilon greedy parameter
+epsilon_min = 0.02  # Minimum epsilon greedy parameter
 epsilon_max = 1.0  # Maximum epsilon greedy parameter
 epsilon_interval = (
     epsilon_max - epsilon_min
@@ -65,12 +65,12 @@ batch_size = 32  # Size of batch taken from replay buffer
 max_steps_per_episode = 10000
 epsilon_greedy_decay_prop = 0.1 # proprtion of total timesteps over which epsilon is decayed
 exploration_proportion = 0.001 # proportion of total timesteps in which agent engages in pure exploration
-total_timesteps = 2000000
+total_timesteps = 100000
 num_actions = 2
 timeout_steps = 500
 train = True
 neg_fall_reward = 5
-exp_name = "2m_min5"
+exp_name = "100k_openai"
 
 # Use the Baseline Atari environment because of Deepmind helper functions
 env = gym.make(env_string)
@@ -189,11 +189,13 @@ if train:
     print("Number of timesteps over which epsilon will be decayed: {}".format(epsilon_greedy_timesteps))
     # Maximum replay length
     # Note: The Deepmind paper suggests 1000000 however this causes memory issues
-    max_memory_length = 100000
+    max_memory_length = 50000
     # Train the model after 1 actions
     update_after_actions = 1
     # How often to update the target network
     update_target_network = 500
+    # From OpenAI Baseline
+    grad_norm_clipping = 10
     # Using huber loss for stability
     loss_function = keras.losses.Huber()
 
@@ -288,8 +290,8 @@ if train:
                     future_rewards, axis=1
                 )
 
-                # If pole fell then set value to -5
-                updated_q_values = updated_q_values * (1 - pole_fall_sample) - neg_fall_reward*pole_fall_sample
+                # If done set target to zero
+                updated_q_values = updated_q_values * (1. - done_sample)
 
                 # Create a mask so we only calculate loss on the updated Q-values
                 masks = tf.one_hot(action_sample, num_actions)
@@ -305,6 +307,12 @@ if train:
 
                 # Backpropagation
                 grads = tape.gradient(loss, model.trainable_variables)
+                clipped_grads = []
+                for grad in grads:
+                    clipped_grads.append(tf.clip_by_norm(grad, grad_norm_clipping))
+                clipped_grads = grads
+                grads_and_vars = zip(grads, model.trainable_variables)
+
                 optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
             if total_timestep_count % update_target_network == 0:
