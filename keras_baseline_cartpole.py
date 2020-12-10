@@ -48,8 +48,6 @@ from tensorflow import keras
 from tensorflow.keras import layers
 import gym
 
-env_string = "CartPole-v1"
-
 # Configuration paramaters for the whole setup
 seed = 42
 gamma = 1.  # Discount factor for past rewards
@@ -67,10 +65,12 @@ epsilon_greedy_decay_prop = 0.1 # proprtion of total timesteps over which epsilo
 exploration_proportion = 0.001 # proportion of total timesteps in which agent engages in pure exploration
 total_timesteps = 100000
 num_actions = 2
-timeout_steps = 500
+timeout_steps = 200
 train = True
 neg_fall_reward = 5
+env_string = "CartPole-v0"
 exp_name = "100k_openai"
+DDQN = True
 
 # Use the Baseline Atari environment because of Deepmind helper functions
 env = gym.make(env_string)
@@ -199,8 +199,12 @@ if train:
     # Using huber loss for stability
     loss_function = keras.losses.Huber()
 
+    if DDQN:
+        arch = "DDQN"
+    else:
+        arch = "DQN"
 
-    checkpoints_dir = os.path.join(".", "checkpoints", env_string, exp_name)
+    checkpoints_dir = os.path.join(".", "checkpoints", env_string, exp_name, arch)
     checkpoint = tf.train.Checkpoint(model=model, model_target=model_target,
                                      epsilon=epsilon, total_timestep_count=total_timestep_count)
     manager = tf.train.CheckpointManager(checkpoint, checkpoints_dir, max_to_keep=40)
@@ -284,11 +288,17 @@ if train:
 
                 # Build the updated Q-values for the sampled future states
                 # Use the target model for stability
-                future_rewards = model_target.predict(state_next_sample)
+                future_rewards_targ = model_target.predict(state_next_sample)
                 # Q value = reward + discount factor * expected future reward
-                updated_q_values = rewards_sample + gamma * tf.reduce_max(
-                    future_rewards, axis=1
-                )
+
+                if not DDQN:
+                    updated_q_values = rewards_sample + gamma * tf.reduce_max(
+                        future_rewards_targ, axis=1)
+                else:
+                    future_rewards = model.predict(state_next_sample)
+                    future_rewards_argmax = tf.argmax(future_rewards, axis=1)
+                    future_rewards_argmax_onehot = tf.one_hot(future_rewards_argmax, num_actions)
+                    updated_q_values = rewards_sample + gamma * tf.reduce_sum(future_rewards_argmax_onehot * future_rewards_targ, axis=1)
 
                 # If done set target to zero
                 updated_q_values = updated_q_values * (1. - done_sample)
