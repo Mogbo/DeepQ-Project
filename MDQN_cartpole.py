@@ -49,7 +49,7 @@ from tensorflow.keras import layers
 import gym
 
 # Configuration paramaters for the whole setup
-seed = 42
+seed = 52
 gamma = 1.  # Discount factor for past rewards
 epsilon = tf.Variable(1.0, trainable=False)  # Epsilon greedy parameter
 epsilon.assign(1.0)
@@ -70,8 +70,8 @@ train = True
 neg_fall_reward = 5
 env_string = "CartPole-v0"
 exp_name = "100k_openai"
-DDQN = False
-MDQN = True
+DDQN = True
+MDQN = False
 tau = 0.03
 alpha = 0.9
 l_0 = -1.
@@ -211,7 +211,7 @@ if train:
         else:
             arch = "DQN"
 
-    checkpoints_dir = os.path.join(".", "checkpoints", env_string, exp_name, arch)
+    checkpoints_dir = os.path.join(".", "checkpoints", env_string, str(seed), exp_name, arch)
     checkpoint = tf.train.Checkpoint(model=model, model_target=model_target,
                                      epsilon=epsilon, total_timestep_count=total_timestep_count)
     manager = tf.train.CheckpointManager(checkpoint, checkpoints_dir, max_to_keep=40)
@@ -313,7 +313,7 @@ if train:
                 else:
                     future_rewards = model.predict(state_next_sample)
                     future_rewards_argmax = tf.argmax(future_rewards, axis=1)
-                    future_rewards_argmax_onehot = tf.one_hot(future_rewards_argmax, num_actions)
+                    future_rewards_argmax_onehot = tf.one_hot(future_rewards_argmax, num_actions, dtype=tf.float32)
                     updated_q_values = rewards_sample + gamma * tf.reduce_sum(future_rewards_argmax_onehot * future_rewards_targ_m, axis=1)
 
                 # If done set target to zero
