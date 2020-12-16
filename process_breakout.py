@@ -22,10 +22,15 @@ def process_file(fname):
 
     return np.array(episodes), np.array(rewards)
 
-episodes, rewards = process_file("keras_baseline_breakoutv4.log")
+episodes_dqn, rewards_dqn = process_file("keras_baseline_breakoutv4.log")
+episodes_ddqn, rewards_ddqn = process_file("keras_baseline_breakoutv4_ddqn.log")
+episodes_mdqn, rewards_mdqn = process_file("keras_baseline_breakoutv4_mdqn.log")
 
-plt.plot(episodes, rewards, label="running_avg")
+plt.plot(episodes_dqn, rewards_dqn, label="DQN")
+plt.plot(episodes_ddqn, rewards_ddqn, label="DDQN")
+plt.plot(episodes_mdqn, rewards_mdqn, label="MDQN")
+
 plt.xlabel("Episode")
 plt.ylabel("Running Average Reward (100 steps)")
-plt.axhline(40, marker="_", color='g', label="target")
+plt.axhline(40, marker="_", color='r', label="target")
 plt.legend()
