@@ -65,7 +65,9 @@ batch_size = 32  # Size of batch taken from replay buffer
 max_steps_per_episode = 10000
 train = True
 DDQN = False
-MDQN = True
+MDQN = False
+SDQN = False
+SDQN_2 = True
 tau = 0.03
 alpha = 0.9
 l_0 = -1.
@@ -148,6 +150,12 @@ if train:
     #arch = ""
     if DDQN:
         arch = "DDQN"
+    elif MDQN:
+        arch = "MDQN"
+    elif SDQN:
+        arch = "SDQN"
+    elif SDQN_2:
+        arch = "SDQN_2"
     else:
         arch = "DQN"
 
@@ -163,6 +171,9 @@ if train:
         epsilon = joblib.load(epsilon_path)
     if os.path.exists(frame_count_path):
         frame_count = joblib.load(frame_count_path)
+
+    print("Starting (or restored) Epsilon:", epsilon)
+    print("Starting (or restored) frame_count:", frame_count)
 
     start_time = time.time()
     #while frame_count < 33:
@@ -233,11 +244,20 @@ if train:
                 # Q value = reward + discount factor * expected future reward
 
                 if not DDQN:
-                    if not MDQN:
-                        updated_q_values = rewards_sample + gamma * tf.reduce_max(
-                            future_rewards_targ_m, axis=1)
+                    if SDQN:
+                        pi_theta_ns = tf.keras.layers.Softmax(axis=1)(future_rewards_targ_m)
 
-                    else:
+                        updated_q_values = rewards_sample + \
+                                           gamma * tf.reduce_sum(pi_theta_ns * (future_rewards_targ_m - tau * tf.math.log(pi_theta_ns)), axis=1)
+
+                    elif SDQN_2:
+                        tau = (1. - alpha)*tau
+                        pi_theta_ns = tf.keras.layers.Softmax(axis=1)(future_rewards_targ_m)
+
+                        updated_q_values = rewards_sample + \
+                                           gamma * tf.reduce_sum(pi_theta_ns * (future_rewards_targ_m - tau * tf.math.log(pi_theta_ns)), axis=1)
+
+                    elif MDQN:
                         pi_theta_ns = tf.keras.layers.Softmax(axis=1)(future_rewards_targ_m)
                         pi_theta = tf.keras.layers.Softmax(axis=1)(model_target.predict(state_sample))
                         unclipped_scaled_log_policy = tau * tf.math.log(tf.reduce_sum(tf.one_hot(action_sample, num_actions) * pi_theta, axis=1))
@@ -245,6 +265,11 @@ if train:
                         updated_q_values = rewards_sample + \
                                            alpha * tf.clip_by_value(unclipped_scaled_log_policy, l_0, 0) + \
                                            gamma * tf.reduce_sum(pi_theta_ns * (future_rewards_targ_m - tau * tf.math.log(pi_theta_ns)), axis=1)
+
+                    else:
+                        updated_q_values = rewards_sample + gamma * tf.reduce_max(
+                            future_rewards_targ_m, axis=1)
+
                 else:
                     future_rewards = model.predict(state_next_sample)
                     future_rewards_argmax = tf.argmax(future_rewards, axis=1)
