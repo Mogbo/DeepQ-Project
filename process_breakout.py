@@ -28,11 +28,13 @@ episodes_mdqn, rewards_mdqn = process_file("keras_baseline_breakoutv4_mdqn.log")
 episodes_sdqn, rewards_sdqn = process_file("keras_baseline_breakoutv4_sdqn.log")
 episodes_sdqn2, rewards_sdqn2 = process_file("keras_baseline_breakoutv4_sdqn2.log")
 
+episodes_mdqn = episodes_mdqn + 8000
+
 fig1, ax1 = plt.subplots()
 
 ax1.plot(episodes_dqn, rewards_dqn, label="DQN", color="C0")
 ax1.plot(episodes_ddqn, rewards_ddqn, label="DDQN", color="C1")
-ax1.plot(episodes_mdqn, rewards_mdqn, label="MDQN", color="C2")
+ax1.plot(episodes_mdqn, rewards_mdqn, label="MDQN*", color="C2")
 
 ax1.set_xlabel("Episode")
 ax1.set_ylabel("Running Average Reward (100 steps)")
@@ -41,9 +43,9 @@ ax1.legend()
 
 fig2, ax2 = plt.subplots()
 ax2.plot(episodes_dqn, rewards_dqn, label="DQN", color="C0")
-ax2.plot(episodes_sdqn, rewards_sdqn, label=r"SDQN($\tau$)", color="C5")
-ax2.plot(episodes_sdqn2, rewards_sdqn2, label=r"SDQN$(1-\alpha)\tau$", color="C6")
-ax2.plot(episodes_mdqn, rewards_mdqn, label="MDQN", color="C2")
+ax2.plot(episodes_sdqn, rewards_sdqn, label=r"SDQN($\tau$)", color="C4")
+ax2.plot(episodes_sdqn2, rewards_sdqn2, label=r"SDQN$(1-\alpha)\tau$", color="C5")
+ax2.plot(episodes_mdqn, rewards_mdqn, label="MDQN*", color="C2")
 
 ax2.set_xlabel("Episode")
 ax2.set_ylabel("Running Average Reward (100 steps)")
