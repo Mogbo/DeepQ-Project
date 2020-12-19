@@ -14,12 +14,57 @@ def process_file(fname):
             match = re.search(r"reward: (\d+\.\d+)", line)
             reward = float( match.group(1))
             rewards.append(reward)
+    rewards = np.array(rewards)
 
-    return np.array(rewards)
+    running_avg = []
+    for idx in range(100, len(rewards)):
+        running_avg.append(rewards[idx - 100: idx].mean())
+    running_avg = np.array(running_avg)
 
-rewards_mdqn = process_file("MDQN_cartpole_52.txt")
-rewards_ddqn = process_file("DDQN_cartpole_52.txt")
-rewards_dqn = process_file("DQN_cartpole_52.txt")
+    return running_avg
+
+def process_trials(trials):
+    min_length = len(trials[0])
+    for trial in trials[1:]:
+        if len(trial) < min_length:
+            min_length = len(trial)
+
+    trunc_trials = []
+    for trial in trials:
+        trunc_trials.append(trial[:min_length])
+    trunc_trials = np.array(trunc_trials)
+
+    return np.average(trunc_trials, axis=0), np.std(trunc_trials, axis=0)
+
+
+MDQN_files = glob.glob("logs/MDQN*.txt")
+DQN_files = glob.glob("logs/DQN*.txt")
+DDQN_files = glob.glob("logs/DDQN*.txt")
+SDQN_files = glob.glob("logs/SDQN_*.txt")
+SDQN2_files = glob.glob("logs/SDQN2_*.txt")
+
+MDQN_trials = []
+DQN_trials = []
+DDQN_trials = []
+SDQN_trials = []
+SDQN2_trials = []
+
+for f in MDQN_files:
+    MDQN_trials.append(process_file(f))
+for f in DQN_files:
+    DQN_trials.append(process_file(f))
+for f in DDQN_files:
+    DDQN_trials.append(process_file(f))
+for f in SDQN_files:
+    SDQN_trials.append(process_file(f))
+for f in SDQN2_files:
+    SDQN2_trials.append(process_file(f))
+
+rewards_mdqn_av, rewards_mdqn_std = process_trials(MDQN_trials)
+rewards_ddqn_av, rewards_ddqn_std = process_trials(DDQN_trials)
+rewards_dqn_av, rewards_dqn_std = process_trials(DQN_trials)
+rewards_sdqn_av, rewards_sdqn_std = process_trials(SDQN_trials)
+rewards_sdqn2_av, rewards_sdqn2_std = process_trials(SDQN2_trials)
 #rewards_norm_done = np.array(process_file("checkpoints/CartPole-v0/100k_openai/DDQN/log.txt"))
 #rewards_ddqn = np.array(process_file("checkpoints/CartPole-v0/100k_openai/DDQN/log.txt"))
 # rewards_not_norm_done = np.array(process_file("not_norm_done.txt"))
@@ -30,30 +75,50 @@ rewards_dqn = process_file("DQN_cartpole_52.txt")
 #plt.plot(np.arange(1, len(rewards_mdqn) + 1), rewards_mdqn, label="mdqn")
 #plt.plot(np.arange(1, len(rewards_ddqn) + 1), rewards_ddqn, label="ddqn")
 
-running_avg_mdqn = []
-for idx in range(100, len(rewards_mdqn)):
-    running_avg_mdqn.append(rewards_mdqn[idx - 100: idx].mean())
-running_avg_mdqn = np.array(running_avg_mdqn)
+fig1, ax1 = plt.subplots()
 
-running_avg_ddqn = []
-for idx in range(100, len(rewards_ddqn)):
-    running_avg_ddqn.append(rewards_ddqn[idx - 100: idx].mean())
-running_avg_ddqn = np.array(running_avg_ddqn)
+ax1.plot(np.arange(100, len(rewards_mdqn_av)+100), rewards_mdqn_av, label="MDQN", color='C2')
+ax1.plot(np.arange(100, len(rewards_ddqn_av)+100), rewards_ddqn_av, label="DDQN", color='C1')
+ax1.plot(np.arange(100, len(rewards_dqn_av)+100), rewards_dqn_av, label="DQN", color='C0')
 
-running_avg_dqn = []
-for idx in range(100, len(rewards_dqn)):
-    running_avg_dqn.append(rewards_dqn[idx - 100: idx].mean())
-running_avg_dqn = np.array(running_avg_dqn)
+ax1.fill_between(np.arange(100, len(rewards_mdqn_av)+100), rewards_mdqn_av - 1.96*rewards_mdqn_std/np.sqrt(5),
+                 rewards_mdqn_av + 1.96*rewards_mdqn_std/np.sqrt(5), alpha=0.07, color="C2")
+ax1.fill_between(np.arange(100, len(rewards_ddqn_av)+100), rewards_ddqn_av - 1.96*rewards_ddqn_std/np.sqrt(5),
+                 rewards_ddqn_av + 1.96*rewards_ddqn_std/np.sqrt(5), alpha=0.07, color="C1")
+ax1.fill_between(np.arange(100, len(rewards_dqn_av)+100), rewards_dqn_av - 1.96*rewards_dqn_std/np.sqrt(5),
+                 rewards_dqn_av + 1.96*rewards_dqn_std/np.sqrt(5), alpha=0.07, color="C0")
 
-plt.plot(np.arange(100, len(rewards_mdqn)), running_avg_mdqn, label="MDQN", color='C0')
-plt.plot(np.arange(100, len(rewards_ddqn)), running_avg_ddqn, label="DDQN", color='C1')
-plt.plot(np.arange(100, len(rewards_dqn)), running_avg_dqn, label="DQN", color='C2')
 
-plt.axhline(running_avg_mdqn.mean(), label="MDQN avg", color='C0', ls = '--')
-plt.axhline(running_avg_ddqn.mean(), label="DDQN avg", color='C1', ls = '--')
-plt.axhline(running_avg_dqn.mean(), label="DQN avg", color='C2', ls = '--')
+ax1.axhline(rewards_mdqn_av.mean(), label="MDQN avg", color='C2', ls = '--')
+ax1.axhline(rewards_ddqn_av.mean(), label="DDQN avg", color='C1', ls = '--')
+ax1.axhline(rewards_dqn_av.mean(), label="DQN avg", color='C0', ls = '--')
 
-plt.xlabel("Episode")
-plt.ylabel("Running Average Reward (100 steps)")
-plt.axhline(195, label="target", color='r')
-plt.legend()
+ax1.set_xlabel("Episode")
+ax1.set_ylabel("Running Average Reward (100 steps)")
+ax1.axhline(195, label="target", color='r')
+ax1.legend()
+
+fig2, ax2 = plt.subplots()
+ax2.plot(np.arange(100, len(rewards_mdqn_av)+100), rewards_mdqn_av, label="MDQN", color='C2')
+ax2.plot(np.arange(100, len(rewards_dqn_av)+100), rewards_dqn_av, label="DQN", color='C0')
+ax2.plot(np.arange(100, len(rewards_sdqn_av)+100), rewards_sdqn_av, label=r"SDQN($\tau$)", color='C4')
+ax2.plot(np.arange(100, len(rewards_sdqn2_av)+100), rewards_sdqn2_av, label=r"SDQN($(1-\alpha)\tau$)", color='C5')
+
+ax2.fill_between(np.arange(100, len(rewards_mdqn_av)+100), rewards_mdqn_av - 1.96*rewards_mdqn_std/np.sqrt(5),
+                 rewards_mdqn_av + 1.96*rewards_mdqn_std/np.sqrt(5), alpha=0.07, color="C2")
+ax2.fill_between(np.arange(100, len(rewards_dqn_av)+100), rewards_dqn_av - 1.96*rewards_dqn_std/np.sqrt(5),
+                 rewards_dqn_av + 1.96*rewards_dqn_std/np.sqrt(5), alpha=0.07, color="C0")
+ax2.fill_between(np.arange(100, len(rewards_sdqn_av)+100), rewards_sdqn_av - 1.96*rewards_sdqn_std/np.sqrt(5),
+                 rewards_sdqn_av + 1.96*rewards_sdqn_std/np.sqrt(5), alpha=0.07, color="C4")
+ax2.fill_between(np.arange(100, len(rewards_sdqn2_av)+100), rewards_sdqn2_av - 1.96*rewards_sdqn2_std/np.sqrt(5),
+                 rewards_sdqn2_av + 1.96*rewards_sdqn2_std/np.sqrt(5), alpha=0.07, color="C5")
+
+ax2.axhline(rewards_mdqn_av.mean(), label="MDQN avg", color='C2', ls = '--')
+ax2.axhline(rewards_dqn_av.mean(), label="DQN avg", color='C0', ls = '--')
+ax2.axhline(rewards_sdqn_av.mean(), label=r"SDQN($\tau$) avg", color='C4', ls = '--')
+ax2.axhline(rewards_sdqn2_av.mean(), label=r"SDQN($(1-\alpha)\tau$) avg", color='C5', ls = '--')
+
+ax2.set_xlabel("Episode")
+ax2.set_ylabel("Running Average Reward (100 steps)")
+ax2.axhline(195, label="target", color='r')
+ax2.legend()
