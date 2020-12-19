@@ -47,9 +47,10 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 import gym
+import sys
 
 # Configuration paramaters for the whole setup
-seed = 52
+seed = int(sys.argv[1])
 gamma = 1.  # Discount factor for past rewards
 epsilon = tf.Variable(1.0, trainable=False)  # Epsilon greedy parameter
 epsilon.assign(1.0)
@@ -70,8 +71,10 @@ train = True
 neg_fall_reward = 5
 env_string = "CartPole-v0"
 exp_name = "100k_openai"
-DDQN = True
+DDQN = False
 MDQN = False
+SDQN = False
+SDQN_2 = True
 tau = 0.03
 alpha = 0.9
 l_0 = -1.
@@ -205,11 +208,14 @@ if train:
 
     if DDQN:
         arch = "DDQN"
+    elif MDQN:
+        arch = "MDQN"
+    elif SDQN:
+        arch = "SDQN"
+    elif SDQN_2:
+        arch = "SDQN_2"
     else:
-        if MDQN:
-            arch = "MDQN"
-        else:
-            arch = "DQN"
+        arch = "DQN"
 
     checkpoints_dir = os.path.join(".", "checkpoints", env_string, str(seed), exp_name, arch)
     checkpoint = tf.train.Checkpoint(model=model, model_target=model_target,
@@ -297,18 +303,32 @@ if train:
                 # Q value = reward + discount factor * expected future reward
 
                 if not DDQN:
-                    if not MDQN:
-                        updated_q_values = rewards_sample + gamma * tf.reduce_max(
-                            future_rewards_targ_m, axis=1)
-
-                    else:
+                    if SDQN:
                         pi_theta_ns = tf.keras.layers.Softmax(axis=1)(future_rewards_targ_m)
-                        pi_theta = tf.keras.layers.Softmax(axis=1)(model_target.predict(state_sample))
-                        unclipped_scaled_log_policy = tau*tf.math.log(tf.reduce_sum(tf.one_hot(action_sample, num_actions)*pi_theta, axis=1))
 
                         updated_q_values = rewards_sample + \
-                                           alpha*tf.clip_by_value(unclipped_scaled_log_policy, l_0, 0) + \
-                                           gamma*tf.reduce_sum(pi_theta_ns*(future_rewards_targ_m - tau*tf.math.log(pi_theta_ns)), axis=1)
+                                           gamma * tf.reduce_sum(
+                            pi_theta_ns * (future_rewards_targ_m - tau * tf.math.log(pi_theta_ns)), axis=1)
+
+                    elif SDQN_2:
+                        tau = (1. - alpha) * tau
+                        pi_theta_ns = tf.keras.layers.Softmax(axis=1)(future_rewards_targ_m)
+
+                        updated_q_values = rewards_sample + \
+                                           gamma * tf.reduce_sum(pi_theta_ns * (future_rewards_targ_m - tau * tf.math.log(pi_theta_ns)), axis=1)
+
+                    elif MDQN:
+                        pi_theta_ns = tf.keras.layers.Softmax(axis=1)(future_rewards_targ_m)
+                        pi_theta = tf.keras.layers.Softmax(axis=1)(model_target.predict(state_sample))
+                        unclipped_scaled_log_policy = tau * tf.math.log(tf.reduce_sum(tf.one_hot(action_sample, num_actions) * pi_theta, axis=1))
+
+                        updated_q_values = rewards_sample + \
+                                           alpha * tf.clip_by_value(unclipped_scaled_log_policy, l_0, 0) + \
+                                           gamma * tf.reduce_sum(pi_theta_ns * (future_rewards_targ_m - tau * tf.math.log(pi_theta_ns)), axis=1)
+
+                    else:
+                        updated_q_values = rewards_sample + gamma * tf.reduce_max(
+                            future_rewards_targ_m, axis=1)
 
                 else:
                     future_rewards = model.predict(state_next_sample)
